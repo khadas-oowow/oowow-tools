@@ -1,0 +1,164 @@
+#!/bin/bash
+
+export TZ=
+
+CMD(){
+    echo "# $@">&2
+    "$@"
+}
+
+OOPS(){
+    echo "OOPS $@">&2
+    exit 1
+}
+
+IDX=_images_
+#IDX_DIR=._images_
+#mkdir -p $IDX
+
+CWD=$PWD
+
+#PREF=${PREF:-vim4}
+#DIR=${1:-$DIR}
+#DIR=${DIR:-/mnt/share/storage/.images/$PREF}
+DIR=${DIR:-$CWD}
+PREF=${DIR##*/}
+
+[ "$DIR" ] || OOPS dir not defined
+
+echo "INDEX $DIR :: $PREF <$CWD">&2
+
+cd "$DIR"
+
+L=/tmp/list.$PREF
+ls -1 > $L
+
+#D=$(mktemp -d)
+D=${D:-/tmp/list.$PREF.d}
+mkdir -p $D
+rm $D/*
+
+i=0
+
+meta_gen_(){
+
+local SIZE=$(stat -Lc%s "$1")
+local LABEL=
+local MATCH=
+local TYPE=
+local Y=$(stat -Lc%Y "$1")
+
+#BOARD=VIM4
+
+cat <<EOF
+##META_FILE##
+FILE: $1
+UNPACKED_SIZE:
+PACKED_SIZE: $SIZE
+FILE_SIZE: $SIZE
+##META-FILE##
+
+##KRESCUE_META##
+type: $TYPE
+label: $LABEL
+match: $MATCH
+link: https://dl.khadas.com/
+desc:
+duration: 60
+date: $(TZ= date --date=@$Y)
+image: $1
+##KRESCUE-META##
+##KRESCUE##END
+EOF
+
+}
+
+meta_(){
+
+    local T=$(file -Lb "$1")
+
+    echo "# meta $1 > $2 || $T">&2
+    local l
+    case "$T" in
+	XZ*)
+        tail -c4096 "$1" | xz -dc > "$2/$1.meta"
+	;;
+	ASCII*)
+	l=$(cat "$1")
+	case $l in
+	    http*)
+	    #echo "++ $L"
+	    echo $l > "$2/$1.url"
+	    #echo "curl -jkL -r-4096 $l"
+	    curl -jkL -r-4096 $l -R -o "$2/$1.meta.tmp"
+	
+	    xz -dc "$2/$1.meta.tmp" > "$2/$1.meta" && {
+		rm "$2/$1.meta.tmp"
+	    }
+
+	    [ -e "$2/$1.meta.tmp" ] && {
+		head "$2/$1.meta.tmp"
+		echo "!!!ERROR meta"
+		exit 1
+	    }
+
+	    #| xz -dc > "$2/$1.meta"
+	    ;;
+	    
+	esac
+
+	;;
+    esac
+
+    if [ -s "$2/$1.meta" ]; then
+        T=$(grep ^date: "$2/$1.meta")
+	T=${T#*: }
+	T=${T/Universal/ }
+	if [ "$T" ] ; then
+	    CMD touch -d"$T" "$2/$1.meta" || \
+	    CMD touch -r"$1" "$2/$1.meta"
+
+# touch -dWed Jul 24 04:33:03 PM Universal 2024 /tmp/list.edge2.d/edge2-armbian-noble-vendor-cli.img.xz.meta
+# touch: invalid date format ‘Wed Jul 24 04:33:03 PM Universal 2024’
+
+
+	else
+	    CMD touch -r"$1" "$2/$1.meta"
+	fi
+    else
+	meta_gen_ "$1" | tee "$2/$1.meta"
+        CMD touch -r"$1" "$2/$1.meta"
+    fi
+
+    [ -s "$2/$1.url" ] && \
+	CMD touch -r"$2/$1.meta" "$2/$1.url"
+
+}
+
+while read l; do
+    case $l in
+	_*|*_index*)
+	continue
+	;;
+    esac
+
+    meta_ "$l" "$D"
+    i=$((i+1))
+
+done < $L
+
+echo $i
+
+ls -l1 $D
+
+cd $D
+
+#tar -czf "$CWD/$IDX" *
+
+tar -cf- * | xz -c9 > "$CWD/.$IDX.tmp" && {
+    mv "$CWD/.$IDX.tmp" "$CWD/$IDX"
+}
+
+[ -e "$CWD/.$IDX.tmp" ] && {
+    rm "$CWD/.$IDX.tmp"
+}
