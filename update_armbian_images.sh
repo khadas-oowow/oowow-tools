@@ -11,6 +11,9 @@ NAME=${SRC##*/}
 CADIR=/tmp
 CACHE="$CADIR/$NAME"
 DIR=/storage/products/oowow/images/armbian
+LOCK=/dev/shm/storage.lock
+
+PID=$$
 
 lowcase(){ echo "$@" | tr '[:upper:]' '[:lower:]' ; }
 upcase(){ echo "$@" | tr '[:lower:]' '[:upper:]' ; }
@@ -25,7 +28,15 @@ ASK(){
     "$@"
 }
 
-echo "Update Armbian images: $(date)"
+STOP(){
+    echo "[$PID] STOP" >&2
+    [ -s $LOCK ] && CMD rm $LOCK
+    exit 0
+}
+
+trap STOP kill int term exit
+
+echo "[$PID] START - Update Armbian images - $(date)"
 
 jq=${jq:-$(which jq)}
 
@@ -55,6 +66,8 @@ CMD ls -l1 "$CACHE".*
 CMD mv "$CACHE.tmp" "$CACHE"
 CMD mv "$CACHE.headers.tmp" "$CACHE.headers"
 
+echo $PID | CMD tee $LOCK
+
 CMD rm "$DIR"/*/*.xz
 
 [ -s "DIR" ] || CMD mkdir -p $DIR
@@ -83,7 +96,6 @@ jq -r \
 done
 
 echo DONE $(date)
-
 exit 0
 
 <<EOF
