@@ -1,0 +1,98 @@
+#!/bin/sh
+
+## hyphop ##
+
+#= oowow-dump2xz
+
+#: USAGE mkdir FOO && cd FOO && [OSVER=] [VER=] [LABEL=] [OUT=] [BOOT=] owow-dump2xz
+
+lowcase(){ echo "$@" | tr '[:upper:]' '[:lower:]' ; }
+upcase(){ echo "$@" | tr '[:lower:]' '[:upper:]' ; }
+CMD(){ echo "# $@" >&2 ; "$@" ;}
+DIE(){ echo "! $@" >&2 ; exit 1;}
+
+REMOTE=${REMOTE:-172.22.1.1}
+XZE=https://raw.githubusercontent.com/hyphop/khadas-rescue-tools/master/scripts/xze
+XZE=http://docs.khadas.com/_export/code/scripts/xze?codeblock=0
+
+for D in *-dump.img.zst; do
+    O=${D%.*}
+    CMD zstd -d "$D" || CMD rm "$O"
+done
+
+for D in *-dump.img; do
+    [ -s "$D" ] && break
+    D=
+done
+
+[ "$D" ] || { # DUMP begin
+echo DUMP data ...
+ping -q -c1 $REMOTE || DIE "cant reach $REMOTE host"
+BOARD=$(ssh root@$REMOTE /opt/board_name 2>/dev/null )
+echo "BOARD: $BOARD"
+[ "BOARD" ] || DIE "BOARD undetected"
+
+boot=boot0
+[ "$BOOT" ] && {
+echo copy boot area
+ssh root@$REMOTE cat /dev/mmcblk?boot0 > $boot
+ls -l1 $boot
+}
+
+T=$BOARD.sfdisk
+ssh root@$REMOTE sfdisk --dump \$\(/opt/mmc_disk\)>$T # | tee $T
+echo --
+USER_DATA=userdata
+grep $USER_DATA $T | while read a b c d e; do
+[ "$d" ] || DIE "partition $USER_DATA not found"
+echo $d - $e
+echo ${d%,*} > $T.userdata
+done
+read USER_START < $T.userdata
+BS=512
+BYTES=${BYTES:-$((USER_START*BS))}
+board=${board-$(lowcase $BOARD)}
+DUMP=$BOARD-emmc-dump.img
+echo "Dump image from $BOARD > $DUMP $BYTES bytes ...wait..."
+[ -s ./xze ] || curl "$XZE" -O
+CMD curl -L "$REMOTE"/api/disk/rdz/mmc.zst:$((BYTES)) -o$DUMP.zst
+CMD zstd -d $DUMP.zst
+D=$DUMP
+} # DUMP end
+
+BOARD=${D%%-*}
+board=vim4n
+board=${board-$(lowcase $BOARD)}
+LABEL=${LABEL:-Android}
+label=${label:-$(lowcase $LABEL)}
+OSVER=${OSVER:-14}
+VER=${VER:-v240820}
+OUT=${OUT:-$board-$label-$OSVER-$VER.raw.img}
+
+echo "CONVERT $D to $OUT ..."
+
+[ -e "$OUT" ] && DIE "image $OUT already exist"
+
+CMD truncate -s+50M "$D"
+CMD mv "$D" "$OUT"
+
+bootloader(){
+    [ "$BOOT" ] || return 0
+    boot=${boot:-boot0}
+    echo "BOOT LOADER '$boot' inject to image...">&2
+    BOOT_OFFSET=$(du -b "$OUT")
+    BOOT_SIZE=$(du -b "$boot")
+    echo "copy boot area $boot to $OUT by $BOOT_OFFSET + $BOOT_SIZE">&2
+    gzip -c $boot >> "$OUT"
+    echo bootloader=$BOOT_OFFSET
+}
+
+CMD sh ./xze "$OUT" \
+    --meta \
+    label="$LABEL" \
+    builder="Khadas" \
+    date="$(TZ=GMT+0 date)" \
+    match=BOARD=$BOARD \
+    $(bootloader) \
+    duration=90 \
+    desc="$BOARD $LABEL $OSVER $VER"
