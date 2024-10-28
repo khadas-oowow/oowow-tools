@@ -1,0 +1,66 @@
+#!/bin/sh
+
+## hyphop ##
+#= files watcher
+
+LOG=${LOG:-/tmp/logfile.log}
+STATE=${STATE:-/tmp/watch-index}
+
+DELAY=60
+
+DIRS="vim1 vim2 vim3 vim3l vim4 edge2 edge vim1s"
+
+DIE(){
+    echo "! $@">&2
+    exit 1
+}
+CMD(){
+    echo "# $@">&2
+    "$@"
+}
+
+NOEXIT=1
+
+mkdir -p "$STATE"
+
+NOLOOP=${NOLOOP:-1}
+
+for a in "$@"; do
+    case $a in
+	-m|--loop)
+	NOLOOP=
+	;;
+	*)
+	[ -d "$a" ] && DIR="$a"
+	;;
+    esac
+done
+
+#DIR=${DIR:-$1}
+DIR=${DIR:-/storage/products/oowow/images}
+
+echo "$(date) | WATCH INDEX | $DIR = $STATE :: noloop: $NOLOOP"
+
+
+cd $DIR
+
+while [ "$NOEXIT" ] ; do
+    echo $(date) -
+#    for D in *; do
+    for D in $DIRS; do
+	[ -d "$D" ] || continue
+	L=$(stat -c%y "$STATE/$D" 2>/dev/null)
+	S=$(stat -c%y "$D")
+	#echo "$D $S == $L"
+	touch -r "$D" "$STATE/$D"
+	[ "$L" = "$S" ] && continue
+	echo "$D $S != $L"
+	
+    done
+    [ "$NOLOOP" ] && break
+    sleep $DELAY
+done
+
+exit 0
+
+<<EOF
