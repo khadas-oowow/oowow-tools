@@ -6,12 +6,16 @@
 #> https://dl.khadas.com/products/oowow/images/armbian/
 #? CRONTAB: */5 * * * * USER=storage ~/update_armbian_images.sh >> ~/update_armbian_images.log 2>&1
 
+export TZ=
+
 SRC=https://www.armbian.com/all-images.json
 NAME=${SRC##*/}
 CADIR=/tmp
 CACHE="$CADIR/$NAME"
+HEAD="$CACHE".headers
 DIR=/storage/products/oowow/images/armbian
 LOCK=/dev/shm/storage.lock
+TMP=/tmp/armbian.images
 
 PID=$$
 
@@ -36,11 +40,26 @@ STOP(){
 
 trap STOP kill int term exit
 
+for a in "$@"; do
+    case $a in
+	-f|--force)
+	echo "FORCE refresh"
+	[ -s "$HEAD" ] && CMD rm "$HEAD"
+	;;
+	-o|--offline)
+	echo "NO RE DOWNLOAD list"
+	NO_DL=1
+	;;
+    esac
+done
+
 echo "[$PID] START - Update Armbian images - $(date)"
 
 jq=${jq:-$(which jq)}
 
 [ "$jq" ] || ASK sudo apt install jq
+
+[ "$NO_DL" ] || {
 
 for ETAG in $(CMD curl -sjkLI "$SRC" | grep -m1 etag | sed 's/\r$//'); do
     ETAG=${ETAG//\"/}
@@ -55,7 +74,7 @@ CMD grep -q "${ETAG}" "$CACHE".headers && OKAY "no need update $(date)"
 
 #[ -s "$CACHE" ] || \
 CMD curl -jkL \
-    --dump-header "$CACHE".headers.tmp \
+    --dump-header "$HEAD".tmp \
     "$SRC" \
     -o"$CACHE".tmp || DIE "download problems"
 
@@ -64,17 +83,29 @@ CMD curl -jkL \
 
 CMD ls -l1 "$CACHE".*
 CMD mv "$CACHE.tmp" "$CACHE"
-CMD mv "$CACHE.headers.tmp" "$CACHE.headers"
+CMD mv "$HEAD.tmp" "$HEAD"
+}
+
+[ -s "$CACHE" ] || DIE "Cache empty $CACHE"
 
 echo $PID | CMD tee $LOCK
 
-CMD rm "$DIR"/*/*.xz
+BOARDS="edge2 vim1s vim3 vim3l vim4"
 
-[ -s "DIR" ] || CMD mkdir -p $DIR
+[ -d "$DIR" ] || CMD mkdir -p "$DIR"
+[ -d "$TMP" ] || CMD mkdir -p "$TMP"
+
+CMD cd   "$TMP"
+CMD find "$TMP" -type f -exec rm {} \;
+
+for B in $BOARDS; do
+    D="$DIR/../$B/armbian"
+#    [ -e "$D" ] || CMD ln -s "../armbian/$B" "$D"
+done
 
 jq -r \
 '.[][] |
-    select((.board_slug | test("^khadas-")) and .file_extension == "oowow.img.xz") | 
+    select((.board_slug | test("^khadas-")) and .file_extension == "oowow.img.xz") |
     "\(.board_slug) \(.file_url) \(.file_updated)"
 ' "$CACHE" | sort | while read board_slug url update ; do
 
@@ -86,13 +117,42 @@ jq -r \
     img2=${img2/khadas-/}
     img2=${img2/.oowow.img/.img}
 
-    mkdir -p "$DIR/$board"
+    [ -d "$board" ] || mkdir -p "$board"
     echo [$board] $img2 $url :: $update
 
-    F="$DIR/$board/$img2"
+    F="$board/$img2"
     echo "$url" > "$F"
     CMD chmod 0667 "$F"
+    CMD touch -d"$update" "$F"
 
+done
+
+echo SORT
+
+CMD rsync \
+    -rcv   \
+    "$TMP/" \
+    "$DIR/"
+
+# refresh board folder if need it
+for B in $BOARDS; do
+#    echo $B
+#    stat "$DIR/$B"
+
+    M=
+    D="$DIR/../$B/armbian"
+    [ -e "$D" ] && {
+        M=$(stat -c%y $D)
+	N=$(stat -c%y "$DIR/$B")
+        [ "$M" != "$N" ] && echo "$M != $N" && CMD rm "$D"
+    }
+
+    [ -e "$D" ] || {
+        CMD ln -s "../armbian/$B" "$D"
+        CMD touch -h -r"$DIR/$B" "$D"
+    }
+
+#    stat "$DIR/../$B/armbian"
 done
 
 echo DONE $(date)
