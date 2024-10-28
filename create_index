@@ -24,6 +24,8 @@ CWD=$PWD
 DIR=${DIR:-$CWD}
 PREF=${DIR##*/}
 
+[ -e ./create_index ] && OOPS "Please, not in this dir: $DIR"
+
 [ "$DIR" ] || OOPS dir not defined
 
 echo "INDEX $DIR :: $PREF <$CWD">&2
@@ -31,12 +33,14 @@ echo "INDEX $DIR :: $PREF <$CWD">&2
 cd "$DIR"
 
 L=/tmp/list.$PREF
-ls -1 > $L
+
+find -L -printf "%P\n" > $L
 
 #D=$(mktemp -d)
 D=${D:-/tmp/list.$PREF.d}
+rm -rf "$D"
 mkdir -p $D
-rm $D/*
+#rm $D/*
 
 i=0
 
@@ -73,6 +77,18 @@ EOF
 
 }
 
+CMD(){
+    echo "#$@">&2
+    "$@" #|| exit 1
+}
+
+DIE(){
+    echo "!$@">&2
+    exit 1
+}
+
+#CURL_DEBUG=
+
 meta_(){
 
     local T=$(file -Lb "$1")
@@ -88,9 +104,54 @@ meta_(){
 	case $l in
 	    http*)
 	    #echo "++ $L"
+	    MIRROR=https://mirrors.ustc.edu.cn/armbian-dl
+
 	    echo $l > "$2/$1.url"
 	    #echo "curl -jkL -r-4096 $l"
-	    curl -jkL -r-4096 $l -R -o "$2/$1.meta.tmp"
+
+#http://dl.armbian.com/mirrors
+#
+#/region/REGIONCODE/PATH
+#
+#Using this magic path will redirect to the desired region:
+#
+#    NA - North America
+#    EU - Europe
+#    AS - Asia
+
+	
+	    #MIRROR=https://mirrors.ustc.edu.cn/armbian-dl
+	    #MIRROR=https://mirror.twds.com.tw/armbian-dl
+	    MIRROR=https://repo.jing.rocks/armbian-dl
+
+	    case $l in
+		*dl.armbian.com/*)
+#		l="$MIRROR/${l#*//*/}"
+		echo "FIX $l"
+		;;
+	    esac
+
+	    CMD curl \
+		-f \
+		--retry 5 \
+		-jkL -I $l -R -o \
+		"$2/$1.headers" || OOPS "$2/$1.headers - $(head $2/$1.headers)"
+
+	    SIZE=
+	    for SIZE in $(grep -i content-length: "$2/$1.headers" |  tr -d '\r'); do
+		continue
+	    done
+	    echo SIZE: $SIZE
+	    [ "$SIZE" ] || DIE "http problem detect size for: $1"
+
+	    for LOCATION in $(grep -i Location: "$2/$1.headers" |  tr -d '\r' | tail -n1); do
+		continue
+	    done
+
+	    echo "LOCATION: $LOCATION"
+	    rm "$2/$1.headers"
+
+	    CMD curl $CURL_DEBUG -jkL -r$((SIZE-4096))- "$LOCATION" -R -o "$2/$1.meta.tmp"
 	
 	    xz -dc "$2/$1.meta.tmp" > "$2/$1.meta" && {
 		rm "$2/$1.meta.tmp"
@@ -136,15 +197,32 @@ meta_(){
 }
 
 while read l; do
+
+    [ -e "$l" ] || continue
+
     case $l in
-	_*|*_index*)
+	_*|*_index*|.*)
 	continue
 	;;
     esac
 
+    [ -d "$l" ] && {
+	echo +: $l
+	mkdir -p "$D/$l"
+	continue
+    }
+
+    echo $l
+#   continue
+
     meta_ "$l" "$D"
     i=$((i+1))
 
+done < $L
+
+while read l; do
+    echo "++ $l"
+    [ -d "$l" ] && CMD touch -r"$l" "$D/$l"
 done < $L
 
 echo $i
@@ -155,7 +233,7 @@ cd $D
 
 #tar -czf "$CWD/$IDX" *
 
-tar -cf- * | xz -c9 > "$CWD/.$IDX.tmp" && {
+tar --owner 0:0 -cf- * | xz -c9 > "$CWD/.$IDX.tmp" && {
     mv "$CWD/.$IDX.tmp" "$CWD/$IDX"
 }
 
