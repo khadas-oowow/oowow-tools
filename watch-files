@@ -1,0 +1,49 @@
+#!/bin/sh
+
+## hyphop ##
+#= files watcher
+
+DIR=${DIR:-$1}
+#DIR=${DIR:-/storage/}
+#DIR=${DIR:-/storage/products/}
+DIR=${DIR:-/storage/products/oowow/images}
+#LOG=${LOG:-/tmp/watch-files.log}
+LOG=${LOG:-/mnt/share/storage.logs/watch-files.log}
+
+DIE(){
+    echo "! $@">&2
+    exit 1
+}
+
+inotifywait=${inotifywait:-$(which inotifywait)}
+[ "$inotifywait" ] || DIE "inotify-tools package is not installed. Please install it first.
+# sudo apt install inotify-tools
+"
+[ -d "$DIR" ] || DIE "Dir $DIR - not exist - Usage $0 [DIR]"
+
+echo "$(date) # MONITOR START : $DIR > $LOG" | tee -a "$LOG"
+
+# Monitor the directory for any changes
+inotifywait -m -r \
+    -e create,delete,move,close_write \
+    --excludei '/storage/.repos/*' \
+    "$DIR" \
+    --format '%T %f %w % e' \
+    --timefmt '%Y-%m-%d-%H:%M:%S' | while read TIME A B C
+do
+
+#   echo "$TIME | $B $A - $C [$(stat -c%y "$B")]" | tee -a "$LOG"
+    echo "$TIME | $B $A - $C [$(who | tr '\n' ' ' | tr -s ' ' )]" | tee -a "$LOG"
+
+done
+
+
+exit 0
+
+<<EOF
+
+hyp@hop:~/khadas.new/oowow-tools$ ./files-watcher
+2024-10-15-11:54:57 | /storage/products/oowow/images/edge2/ edge2-android-12-v230625.raw.img.xz - CLOSE_WRITE CLOSE [2024-10-15 11:54:57.472134624 +0700]
+2024-10-15-11:54:57 | /storage/products/oowow/images/edge2/ edge2-android-13-v231123.raw.img.xz - CREATE            [2024-10-15 11:54:57.472134624 +0700]
+2024-10-15-11:56:52 | /storage/products/oowow/images/edge2/ edge2-android-13-v231123.raw.img.xz - CLOSE_WRITE CLOSE [2024-10-15 11:56:52.089825077 +0700]
+
