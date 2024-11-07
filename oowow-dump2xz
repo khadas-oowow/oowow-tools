@@ -54,14 +54,12 @@ BYTES=${BYTES:-$((USER_START*BS))}
 board=${board-$(lowcase $BOARD)}
 DUMP=$BOARD-emmc-dump.img
 echo "Dump image from $BOARD > $DUMP $BYTES bytes ...wait..."
-[ -s ./xze ] || curl "$XZE" -O
 CMD curl -L "$REMOTE"/api/disk/rdz/mmc.zst:$((BYTES)) -o$DUMP.zst
 CMD zstd -d $DUMP.zst
 D=$DUMP
 } # DUMP end
 
 BOARD=${D%%-*}
-board=vim4n
 board=${board-$(lowcase $BOARD)}
 LABEL=${LABEL:-Android}
 label=${label:-$(lowcase $LABEL)}
@@ -87,7 +85,11 @@ bootloader(){
     echo bootloader=$BOOT_OFFSET
 }
 
-CMD sh ./xze "$OUT" \
+xze=$(which xze)
+xze=${xze:-./xze}
+[ -s "$xze" ] || curl "$XZE" -o"$xze"
+
+CMD sh $xze "$OUT" \
     --meta \
     label="$LABEL" \
     builder="Khadas" \
