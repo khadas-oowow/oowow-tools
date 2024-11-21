@@ -17,6 +17,7 @@ XZE=http://docs.khadas.com/_export/code/scripts/xze?codeblock=0
 
 for D in *-dump.img.zst; do
     O=${D%.*}
+    [ -s "$D" ] || continue
     CMD zstd -d "$D" || CMD rm "$O"
 done
 
@@ -43,11 +44,13 @@ T=$BOARD.sfdisk
 ssh root@$REMOTE sfdisk --dump \$\(/opt/mmc_disk\)>$T # | tee $T
 echo --
 USER_DATA=userdata
-grep $USER_DATA $T | while read a b c d e; do
+grep $USER_DATA $T || ssh root@$REMOTE /opt/aml_partitions >>$T # | tee $T
+grep $USER_DATA $T | while read a b c d e f g h j k l m ; do
 [ "$d" ] || DIE "partition $USER_DATA not found"
-echo $d - $e
-echo ${d%,*} > $T.userdata
+echo "${d%,*} or $l"
+echo ${l:-${d%,*}} > $T.userdata
 done
+
 read USER_START < $T.userdata
 BS=512
 BYTES=${BYTES:-$((USER_START*BS))}
