@@ -42,14 +42,18 @@ trap STOP kill int term exit
 
 for a in "$@"; do
     case $a in
-	-f|--force)
+	-f|--force) ##? 
 	echo "FORCE refresh"
 	[ -s "$HEAD" ] && CMD rm "$HEAD"
 	;;
-	-o|--offline)
+	-o|--offline) ##?
 	echo "NO RE DOWNLOAD list"
 	NO_DL=1
 	;;
+	-h|--help|*) ##?
+	echo "HELP USAGE $0 [args]"
+	grep \#\#\? -A1 $0
+	exit 0
     esac
 done
 
