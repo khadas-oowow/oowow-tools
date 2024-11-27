@@ -89,6 +89,33 @@ DIE(){
 
 #CURL_DEBUG=
 
+TRY(){
+    case $1 in
+	*dl.armbian.com*)
+	;;
+	*)
+	echo "$1"
+	return # as is
+	;;
+    esac
+
+## https://github.com/armbian/armbian-router
+
+#http://dl.armbian.com/mirrors
+#
+#/region/REGIONCODE/PATH
+#
+#Using this magic path will redirect to the desired region:
+#
+#    NA - North America
+#    EU - Europe
+#    AS - Asia
+
+    local l2="https://dl.armbian.com/$2${l#*.com/}"
+    echo "TRY: $l2">&2
+    echo "$l2"
+}
+
 meta_(){
 
     local T=$(file -Lb "$1")
@@ -103,46 +130,30 @@ meta_(){
 	l=$(cat "$1")
 	case $l in
 	    http*)
-	    #echo "++ $L"
-	    MIRROR=https://mirrors.ustc.edu.cn/armbian-dl
-
 	    echo $l > "$2/$1.url"
-	    #echo "curl -jkL -r-4096 $l"
 
-#http://dl.armbian.com/mirrors
-#
-#/region/REGIONCODE/PATH
-#
-#Using this magic path will redirect to the desired region:
-#
-#    NA - North America
-#    EU - Europe
-#    AS - Asia
-
-	
-	    #MIRROR=https://mirrors.ustc.edu.cn/armbian-dl
-	    #MIRROR=https://mirror.twds.com.tw/armbian-dl
-	    MIRROR=https://repo.jing.rocks/armbian-dl
-
-	    case $l in
-		*dl.armbian.com/*)
-#		l="$MIRROR/${l#*//*/}"
-		echo "FIX $l"
-		;;
-	    esac
+	    for try in "" region/EU/ region/AS/ region/NA/; do
+	    l2=$(TRY "$l" $try)
+	    #l2=$l
+	    HDR="$2/$1.headers"
+	    [ -s "$HDR" ] && rm "$HDR"
 
 	    CMD curl \
 		-f \
-		--retry 5 \
-		-jkL -I $l -R -o \
-		"$2/$1.headers" || OOPS "$2/$1.headers - $(head $2/$1.headers)"
+		-jkL -I "$l2" -R -o \
+		"$HDR" || OOPS "$HDR - $(head $HDR)"
 
 	    SIZE=
 	    for SIZE in $(grep -i content-length: "$2/$1.headers" |  tr -d '\r'); do
 		continue
 	    done
 	    echo SIZE: $SIZE
-	    [ "$SIZE" ] || DIE "http problem detect size for: $1"
+	    [ "$SIZE" ] && break
+	    done # try
+
+	    [ "$SIZE" ] || {
+	    DIE "http problem detect size for: $1"
+	    }
 
 	    for LOCATION in $(grep -i Location: "$2/$1.headers" |  tr -d '\r' | tail -n1); do
 		continue
