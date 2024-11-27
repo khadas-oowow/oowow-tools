@@ -131,6 +131,7 @@ echo SORT
 
 CMD rsync \
     -rcv   \
+    --delete \
     "$TMP/" \
     "$DIR/"
 
