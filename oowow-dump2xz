@@ -96,7 +96,7 @@ CMD sh $xze "$OUT" \
     --meta \
     label="$LABEL" \
     builder="Khadas" \
-    date="$(TZ=GMT+0 date)" \
+    date="$(LANG=C TZ=GMT+0 date)" \
     match=BOARD=$BOARD \
     $(bootloader) \
     duration=90 \
